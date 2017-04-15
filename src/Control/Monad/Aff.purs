@@ -31,7 +31,7 @@ import Control.Monad.Eff.Exception (Error, EXCEPTION, throwException, error)
 import Control.Monad.Error.Class (class MonadError, throwError)
 import Control.Monad.Rec.Class (class MonadRec, Step(..))
 import Control.MonadPlus (class MonadZero, class MonadPlus)
-import Control.Parallel (class Parallel)
+-- import Control.Parallel (class Parallel)
 import Control.Plus (class Plus, empty)
 
 import Data.Either (Either(..), either)
@@ -173,7 +173,7 @@ instance applyAff :: Apply (Aff e) where
   apply ff fa = runFn3 _bind alwaysCanceler ff (\f -> f <$> fa)
 
 instance applicativeAff :: Applicative (Aff e) where
-  pure v = runFn2 _pure nonCanceler v
+  pure v = _pure v
 
 instance bindAff :: Bind (Aff e) where
   bind fa f = runFn3 _bind alwaysCanceler fa f
@@ -268,9 +268,9 @@ instance plusParAff :: Plus (ParAff e) where
 
 instance alternativeParAff :: Alternative (ParAff e)
 
-instance parallelParAff :: Parallel (ParAff e) (Aff e) where
-  parallel = ParAff
-  sequential (ParAff ma) = ma
+-- instance parallelParAff :: Parallel (ParAff e) (Aff e) where
+--   parallel = ParAff
+--   sequential (ParAff ma) = ma
 
 makeVar :: forall e a. Aff e (AVar a)
 makeVar = fromAVBox $ _makeVar nonCanceler
@@ -299,7 +299,7 @@ foreign import _forkAll :: forall f e a b. Fn3 (Canceler e) ((b -> a -> b) -> b 
 
 foreign import _makeAff :: forall e a. ((Error -> Eff e Unit) -> (a -> Eff e Unit) -> Eff e (Canceler e)) -> Aff e a
 
-foreign import _pure :: forall e a. Fn2 (Canceler e) a (Aff e a)
+foreign import _pure :: forall e a. a -> (Aff e a)
 
 foreign import _throwError :: forall e a. Fn2 (Canceler e) Error (Aff e a)
 

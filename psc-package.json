@@ -1,0 +1,12 @@
+{
+    "name": "aff",
+    "set": "erl-0.10.5",
+    "source": "https://github.com/purerl/package-sets.git",
+    "depends": [
+        "unsafe-coerce",
+        "transformers",
+        "functions",
+        "exceptions",
+        "console"
+    ]
+}
