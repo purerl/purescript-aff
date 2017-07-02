@@ -3,8 +3,8 @@ module Test.Main where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Monad.Aff (Aff, runAff, makeAff, makeAff', launchAff, later, later', forkAff, forkAll, Canceler(..), cancel, attempt, finally, apathize)
-import Control.Monad.Aff.AVar (AVAR, makeVar, makeVar', putVar, modifyVar, takeVar, peekVar, killVar)
+import Control.Monad.Aff (Aff, runAff, makeAff, launchAff, delay, forkAff, forkAll, Canceler(..), cancel, attempt, finally, apathize)
+import Control.Monad.Aff.AVar (AVAR, makeVar, makeVar', putVar, modifyVar, takeVar, peekVar, killVar, tryTakeVar, tryPeekVar)
 import Control.Monad.Aff.Console (CONSOLE, log)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (log) as Eff
@@ -14,6 +14,7 @@ import Control.Monad.Rec.Class (Step(..), tailRecM)
 -- import Control.Parallel (parallel, sequential)
 import Data.Either (either, fromLeft, fromRight, Either(..))
 import Data.Maybe (Maybe(..))
+import Data.Time.Duration (Milliseconds(..))
 import Data.Unfoldable (replicate)
 import Partial.Unsafe (unsafePartial)
 import Unsafe.Coerce
@@ -21,10 +22,10 @@ import Unsafe.Coerce
 type Test a = forall e. Aff (console :: CONSOLE | e) a
 type TestAVar a = forall e. Aff (console :: CONSOLE, avar :: AVAR | e) a
 
-timeout :: Int → TestAVar Unit → TestAVar Unit
+timeout :: Milliseconds → TestAVar Unit → TestAVar Unit
 timeout ms aff = do
   exn <- makeVar
-  clr1 <- forkAff (later' ms (putVar exn (Just "Timed out")))
+  clr1 <- forkAff (delay ms *> putVar exn (Just "Timed out"))
   clr2 <- forkAff (aff *> putVar exn Nothing)
   res ← takeVar exn
   log (show res)
@@ -38,7 +39,8 @@ timeout ms aff = do
 test_sequencing :: Int -> Test Unit
 test_sequencing 0 = log "Done"
 test_sequencing n = do
-  later' 100 (log (show (n / 10) <> " seconds left"))
+  delay $ Milliseconds 100.0
+  log (show (n / 10) <> " seconds left")
   test_sequencing (n - 1)
 
 foreign import synchronousUnexpectedThrowError :: forall e. Eff e Unit
@@ -97,22 +99,22 @@ test_apathize = do
 test_putTakeVar :: TestAVar Unit
 test_putTakeVar = do
   v <- makeVar
-  forkAff (later $ putVar v 1.0)
+  _ <- forkAff (delay (Milliseconds 0.0) *> putVar v 1.0)
   a <- takeVar v
   log ("Success: Value " <> show a)
 
 test_peekVar :: TestAVar Unit
 test_peekVar = do
-  timeout 1000 do
+  timeout (Milliseconds 1000.0) do
     v <- makeVar
-    forkAff (later $ putVar v 1.0)
+    _ <- forkAff (delay (Milliseconds 0.0) *> putVar v 1.0)
     a1 <- peekVar v
     a2 <- takeVar v
     when (a1 /= a2) do
       throwError (error "Something horrible went wrong - peeked var is not equal to taken var")
     log ("Success: Peeked value not consumed")
 
-  timeout 1000 do
+  timeout (Milliseconds 1000.0) do
     w <- makeVar
     putVar w true
     b <- peekVar w
@@ -120,10 +122,10 @@ test_peekVar = do
       throwError (error "Something horrible went wrong - peeked var is not true")
     log ("Success: Peeked value read from written var")
 
-  timeout 1000 do
+  timeout (Milliseconds 1000.0) do
     x <- makeVar
     res <- makeVar' 1
-    forkAff do
+    _ <- forkAff do
       c <- peekVar x
       putVar x 1000
       d <- peekVar x
@@ -138,7 +140,7 @@ test_peekVar = do
 --
 -- test_killFirstForked :: Test Unit
 -- test_killFirstForked = do
---   c <- forkAff (later' 100 $ pure "Failure: This should have been killed!")
+--   c <- forkAff (delay (Milliseconds 100.0) $> "Failure: This should have been killed!")
 --   b <- c `cancel` (error "Just die")
 --   log (if b then "Success: Killed first forked" else "Failure: Couldn't kill first forked")
 --
@@ -149,42 +151,42 @@ test_peekVar = do
 --   e <- attempt $ takeVar v
 --   either (const $ log "Success: Killed queue dead") (const $ log "Failure: Oh noes, queue survived!") e
 --
--- test_finally :: TestAVar Unit
--- test_finally = do
---   v <- makeVar
---   finally
---     (putVar v 0)
---     (putVar v 2)
---   apathize $ finally
---     (throwError (error "poof!") *> putVar v 666) -- this putVar should not get executed
---     (putVar v 40)
---   n1 <- takeVar v
---   n2 <- takeVar v
---   n3 <- takeVar v
---   log $ if n1 + n2 + n3 == 42 then "Success: effects amount to 42."
---                                 else "Failure: Expected 42."
---
--- test_parRace :: TestAVar Unit
--- test_parRace = do
---   s <- sequential (parallel (later' 100 $ pure "Success: Early bird got the worm") <|>
---                parallel (later' 200 $ pure "Failure: Late bird got the worm"))
---   log s
---
--- test_parError :: TestAVar Unit
--- test_parError = do
---   e <- attempt $ sequential (parallel (throwError (error ("Oh noes!"))) *> pure unit)
---   either (const $ log "Success: Exception propagated") (const $ log "Failure: Exception missing") e
---
--- test_parRaceKill1 :: TestAVar Unit
--- test_parRaceKill1 = do
---   s <- sequential (parallel (later' 100 $ throwError (error ("Oh noes!"))) <|>
---                parallel (later' 200 $ pure "Success: Early error was ignored in favor of late success"))
---   log s
---
--- test_parRaceKill2 :: TestAVar Unit
--- test_parRaceKill2 = do
---   e <- attempt $ sequential (parallel (later' 100 $ throwError (error ("Oh noes!"))) <|>
---                          parallel (later' 200 $ throwError (error ("Oh noes!"))))
+test_tryTakeVar :: TestAVar Unit
+test_tryTakeVar = do
+  timeout (Milliseconds 1000.0) do
+    v <- makeVar
+    x <- tryTakeVar v
+    case x of
+      Nothing -> log $ "Success: trying take an empty var"
+      Just _  -> throwError $ error $ "Failure: Oh noes, take an empty var should return Nothing"
+
+  timeout (Milliseconds 1000.0) do
+    v <- makeVar
+    b <- tryTakeVar v
+    putVar v 1.0
+    a <- tryTakeVar v
+    when (a /= Just 1.0 || a == b) do
+      throwError $ error ("Failure: Oh noes, tryTakeVar should take var if it available, value: " <> show a)
+    log $ "Success: value taken by tryTakeVar " <> show a
+
+test_tryPeekVar :: TestAVar Unit
+test_tryPeekVar = do
+  timeout (Milliseconds 1000.0) do
+    v <- makeVar
+    x <- tryPeekVar v
+    case x of
+      Nothing -> log $ "Success: try peek var return immediately"
+      Just _  -> throwError $ error $ "Failure: tryPeekVar return Just when peek an empty var"
+
+  timeout (Milliseconds 1000.0) do
+    v <- makeVar
+    putVar v 100.0
+    a <- tryPeekVar v
+    b <- takeVar v
+    when (a /= Just b) do
+      throwError (error "Something horrible went wrong - peeked var is not equal to taken var")
+    log ("Success: Try Peeked value not consumed")
+
 --   either (const $ log "Success: Killing both kills it dead") (const $ log "Failure: It's alive!!!") e
 --
 -- test_semigroupCanceler :: Test Unit
@@ -281,10 +283,7 @@ test_peekVar = do
 --   canceled <- cancel canceler (error "bye")
 --   log ("Cancelled all: " <> show canceled)
 --
-delay :: forall eff. Int -> Aff eff Unit
-delay n = later' n (pure unit)
-
-main :: Eff (console :: CONSOLE, avar :: AVAR, err :: EXCEPTION) Unit
+main :: Eff (console :: CONSOLE, avar :: AVAR, exception :: EXCEPTION) Unit
 main =
   -- Eff.log "Testing kill of later launched in separate Aff"
   -- test_cancelLaunchLater
@@ -312,8 +311,9 @@ main =
     log "Testing attempt"
     test_attempt
 
-    log "Testing later"
-    later $ log "Success: It happened later"
+    log "Testing delay"
+    delay (Milliseconds 0.0)
+    log "Success: It happened later"
 
     -- log "Testing kill of later"
     -- test_cancelLater
@@ -364,7 +364,7 @@ main =
     -- test_syncTailRecM
     --
     log "pre-delay"
-    delay 1000
+    delay (Milliseconds 1000.0)
     log "post-delay"
     --
     -- loopAndBounce 1000000
