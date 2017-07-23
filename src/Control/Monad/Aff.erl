@@ -1,18 +1,16 @@
 -module(control_monad_aff@foreign).
--export(['_cancelWith'/0, '_setTimeout'/0, '_unsafeInterleaveAff'/1, '_forkAff'/0, '_forkAll'/0, '_makeAff'/1, '_pure'/1, '_throwError'/0, '_fmap'/0, '_bind'/0, '_attempt'/0, '_runAff'/0, '_liftEff'/0, '_tailRecM'/0]).
+-export(['_cancelWith'/0, '_delay'/0, '_unsafeInterleaveAff'/1, '_forkAff'/0, '_forkAll'/0, '_makeAff'/1, '_pure'/1, '_throwError'/0, '_fmap'/0, '_bind'/0, '_attempt'/0, '_runAff'/0, '_liftEff'/0, '_tailRecM'/0]).
 
 
 % _cancelWith :: forall e a. Fn3 (Canceler e) (Aff e a) (Canceler e) (Aff e a)
 '_cancelWith'() -> error("not implemented"). %fun (C,A,C) -> error("not implemented") end.
 
-'_setTimeout'() -> fun (C,N,A) ->
-  fun SetTimeoutAff(Succ, Err) ->
+'_delay'() -> fun (C,N) ->
+  fun (Succ, Err) ->
     receive
     after N ->
-      A(Succ, Err),
+      Succ(unit),
       fun (_E) -> fun (S, C) -> false end end
-      % C
-    end
   end
 end.
 
